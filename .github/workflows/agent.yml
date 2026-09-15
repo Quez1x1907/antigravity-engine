@@ -39,6 +39,8 @@ jobs:
       - name: Run Antigravity agent
         env:
           ANTIGRAVITY_TOKEN: ${{ secrets.ANTIGRAVITY_TOKEN }}
+          AGY_CLIENT_ID: ${{ secrets.AGY_CLIENT_ID }}
+          AGY_CLIENT_SECRET: ${{ secrets.AGY_CLIENT_SECRET }}
           TASK: ${{ inputs.task }}
         run: bash scripts/run-agent.sh
 
