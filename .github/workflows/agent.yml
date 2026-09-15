@@ -41,6 +41,7 @@ jobs:
           ANTIGRAVITY_TOKEN: ${{ secrets.ANTIGRAVITY_TOKEN }}
           AGY_CLIENT_ID: ${{ secrets.AGY_CLIENT_ID }}
           AGY_CLIENT_SECRET: ${{ secrets.AGY_CLIENT_SECRET }}
+          AGY_SESSION_PASS: ${{ secrets.AGY_SESSION_PASS }}
           TASK: ${{ inputs.task }}
         run: bash scripts/run-agent.sh
 
