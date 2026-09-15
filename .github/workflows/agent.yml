@@ -1,0 +1,54 @@
+name: Antigravity agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Задача для агента'
+        required: true
+        type: string
+      initData:
+        description: 'Telegram initData владельца (проверяется ниже)'
+        required: true
+        type: string
+
+# один запуск за раз — агент тяжёлый
+concurrency:
+  group: antigravity-agent
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Telegram initData (owner only)
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          OWNER_TG_ID: '5485249627'
+          INIT_DATA: ${{ inputs.initData }}
+        run: node scripts/validate-init-data.js "$BOT_TOKEN" "$OWNER_TG_ID" "$INIT_DATA"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Antigravity agent
+        env:
+          ANTIGRAVITY_TOKEN: ${{ secrets.ANTIGRAVITY_TOKEN }}
+          TASK: ${{ inputs.task }}
+        run: bash scripts/run-agent.sh
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-result-${{ github.run_id }}
+          path: |
+            output/**
+            !output/**/*.tmp
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,4 @@
+# Antigravity-специфичные артефакты
+output/
+*.tmp
+node_modules
