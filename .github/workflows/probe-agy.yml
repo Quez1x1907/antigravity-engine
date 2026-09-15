@@ -1,0 +1,28 @@
+name: Probe agy in CI
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install agy
+        run: |
+          curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --skip-path 2>&1 | tail -5
+          export PATH="$HOME/.local/bin:$PATH"
+          agy --version || echo "no --version flag"
+      - name: Headless without creds (ожидаем ошибку auth, не hang)
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          timeout 60 agy -p "say ok" 2>&1 | head -20 || echo "EXIT=$?"
+      - name: Interactive via pty — что печатает без кредов?
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          script -qec "timeout 45 agy" /dev/null 2>&1 | head -40 || true
+      - name: Ключница в раннере?
+        run: |
+          which dbus-run-session secret-tool || true
+          ls ~/.gemini/antigravity-cli/ 2>/dev/null || echo "нет ~/.gemini/antigravity-cli"
+          find ~ -name "*antigravity*" -maxdepth 4 2>/dev/null | head -10
