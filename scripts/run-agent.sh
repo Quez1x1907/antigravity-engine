@@ -1,53 +1,50 @@
 #!/usr/bin/env bash
-# Выполнение задачи через Antigravity CLI (agy): сессия владельца восстанавливается
-# из зашифрованного архива session/agy_session.enc (AES-256-CBC, пароль в секрете
-# AGY_SESSION_PASS), затем agy -p выполняет задачу на лимитах подписки владельца.
-# Выход: output/result.md — ответ агента, output/agy.err — stderr, output/raw_answer.txt — сырой вывод.
+# Выполнение задачи через локальный agy на сервере (self-hosted runner).
+# Требования на сервере: agy в ~/.local/bin, пропатчен против регион-лока,
+# прокси для модельных запросов — в ~/agy_proxy.env (см. handoff §5.3).
+# Вход: TASK. Выход: output/result.md.
 set -euo pipefail
 
 fail() { echo "ОШИБКА: $*" >&2; exit 1; }
-PASS="${AGY_SESSION_PASS:?AGY_SESSION_PASS не задан (GitHub Secrets)}"
 [ -n "${TASK:-}" ] || fail "TASK не задан"
 OUT_DIR="${GITHUB_WORKSPACE:-$(pwd)}/output"
-mkdir -p "$OUT_DIR" "$HOME/.gemini"
+mkdir -p "$OUT_DIR"
 
-echo "=== Antigravity agent (agy) ==="
-echo "Задача: ${TASK:0:200}"
-
-echo "1/4 Устанавливаю Antigravity CLI…"
-curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --skip-path 2>&1 | tail -2
 export PATH="$HOME/.local/bin:$PATH"
-command -v agy >/dev/null 2>&1 || fail "agy не установился"
+command -v agy >/dev/null 2>&1 || fail "agy не найден на сервере (~/.local/bin/agy)"
 
-echo "2/4 Восстанавливаю сессию владельца…"
-ENC="$(cd "$(dirname "$0")" && pwd)/../session/agy_session.enc"
-[ -f "$ENC" ] || fail "нет файла сессии $ENC"
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$ENC" -out /tmp/agy_session.tar.gz -pass "pass:$PASS"
-tar -xzf /tmp/agy_session.tar.gz -C "$HOME/.gemini"
-rm -f /tmp/agy_session.tar.gz
+# Прокси для модельных запросов: ~/agy_proxy.env (HTTPS_PROXY=socks5://IP:PORT и т.п.)
+if [ -f "$HOME/agy_proxy.env" ]; then
+    set -a
+    . "$HOME/agy_proxy.env"
+    set +a
+fi
 
-echo "3/4 Отправляю задачу agy (до 15 минут)…"
+AGY_MODEL="${AGY_MODEL:-gemini-3.8-flash-high}"
+
+echo "=== Antigravity agent (agy на сервере) ==="
+echo "Задача: ${TASK:0:200}"
+echo "Модель: $AGY_MODEL"
+
 cd "$HOME"
 set +e
-timeout 900 agy -p --dangerously-skip-permissions --print-timeout 15m "$TASK" \
+timeout 900 agy -p --dangerously-skip-permissions --model "$AGY_MODEL" "$TASK" \
   > "$OUT_DIR/raw_answer.txt" 2> "$OUT_DIR/agy.err"
 RC=$?
 set -e
 echo "agy exit=$RC"
 
-echo "4/4 Оформляю результат…"
-if [ $RC -eq 0 ] && [ -s "$OUT_DIR/raw_answer.txt" ]; then
-  cp "$OUT_DIR/raw_answer.txt" "$OUT_DIR/result.md"
-  {
-    echo
-    echo "---"
-    echo "*Antigravity · $(date -u +%Y-%m-%dT%H:%M:%SZ)*"
-  } >> "$OUT_DIR/result.md"
-  echo "Символов в ответе: $(wc -c < "$OUT_DIR/result.md")"
-else
+if [ $RC -ne 0 ] || [ ! -s "$OUT_DIR/raw_answer.txt" ]; then
   echo "--- stderr agy (последние 20 строк) ---" >&2
   tail -20 "$OUT_DIR/agy.err" >&2 2>/dev/null || true
-  fail "agy завершился с кодом $RC (подробности уйдут в артефакт: output/agy.err)"
+  fail "agy завершился с кодом $RC (подробности в agy.err — уйдут в артефакт)"
 fi
 
+cp "$OUT_DIR/raw_answer.txt" "$OUT_DIR/result.md"
+{
+  echo
+  echo "---"
+  echo "*Antigravity · $AGY_MODEL · $(date -u +%Y-%m-%dT%H:%M:%SZ)*"
+} >> "$OUT_DIR/result.md"
+echo "Символов в ответе: $(wc -c < "$OUT_DIR/result.md")"
 echo "=== Готово: output/result.md ==="
